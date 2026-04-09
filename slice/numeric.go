@@ -16,12 +16,22 @@ func Repeat[T any](elem T, n int) Slice[T] {
 	return result
 }
 
+// rangeCapacity converts a numeric length to a safe int capacity, capping at
+// 1<<24 (16 M) to prevent overflow when T is a wide unsigned type.
+func rangeCapacity[T Number](n T) int {
+	const maxCap = 1 << 24
+	if float64(n) > float64(maxCap) {
+		return maxCap
+	}
+	return int(n)
+}
+
 // Range creates a slice from start to end (exclusive).
 func Range[T Number](start, end T) Slice[T] {
 	if end <= start {
 		return nil
 	}
-	result := make(Slice[T], 0, int(end-start))
+	result := make(Slice[T], 0, rangeCapacity(end-start))
 	for i := start; i < end; i++ {
 		result = append(result, i)
 	}
@@ -33,7 +43,7 @@ func RangeStep[T Number](start, end, step T) Slice[T] {
 	if end <= start || step <= 0 {
 		return nil
 	}
-	result := make(Slice[T], 0, int((end-start)/step)+1)
+	result := make(Slice[T], 0, rangeCapacity((end-start)/step)+1)
 	for i := start; i < end; i += step {
 		result = append(result, i)
 	}

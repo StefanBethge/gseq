@@ -24,9 +24,26 @@ func (s Slice[T]) Iter2() iter.Seq2[int, T] {
 	}
 }
 
+// collectInitCap is the starting capacity for Collect. Large enough to avoid
+// the first few doublings for typical iterator outputs while staying cheap for
+// small ones.
+const collectInitCap = 64
+
 // Collect builds a Slice from any iter.Seq[T].
+// When the expected output size is known ahead of time, prefer CollectCap to
+// avoid repeated reallocation.
 func Collect[T any](seq iter.Seq[T]) Slice[T] {
-	var result Slice[T]
+	result := make(Slice[T], 0, collectInitCap)
+	for v := range seq {
+		result = append(result, v)
+	}
+	return result
+}
+
+// CollectCap is like Collect but pre-allocates cap elements, eliminating
+// reallocation when the output size is known in advance.
+func CollectCap[T any](seq iter.Seq[T], cap int) Slice[T] {
+	result := make(Slice[T], 0, cap)
 	for v := range seq {
 		result = append(result, v)
 	}

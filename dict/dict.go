@@ -17,7 +17,7 @@ type Map[K comparable, V any] map[K]V
 
 // Filter returns a new Map containing only entries for which fn returns true.
 func (m Map[K, V]) Filter(fn func(K, V) bool) Map[K, V] {
-	result := make(Map[K, V])
+	result := make(Map[K, V], len(m))
 	for k, v := range m {
 		if fn(k, v) {
 			result[k] = v

@@ -166,7 +166,9 @@ func FilterParallelN[T any](s Slice[T], n int, fn func(T) bool) Slice[T] {
 
 // GroupBy groups elements by the key returned by fn.
 func GroupBy[T any, K comparable](s Slice[T], fn func(T) K) map[K]Slice[T] {
-	result := make(map[K]Slice[T])
+	// Hint at the number of unique keys. Overestimates when cardinality is low,
+	// but eliminates rehashing for high-cardinality inputs.
+	result := make(map[K]Slice[T], len(s))
 	for _, v := range s {
 		key := fn(v)
 		result[key] = append(result[key], v)
@@ -239,10 +241,19 @@ func ReduceParallelN[T any](s Slice[T], n int, initial T, fn func(T, T) T) T {
 }
 
 // FlatMap applies fn to each element and flattens the result.
+// The initial capacity is len(s) as a lower-bound estimate; use Flatten after
+// collecting all inner slices when the total size is known up-front.
 func FlatMap[T, O any](s Slice[T], fn func(T) Slice[O]) Slice[O] {
-	result := make(Slice[O], 0, len(s))
-	for _, v := range s {
-		result = append(result, fn(v)...)
+	// Two-pass: collect inner slices first so we can pre-calculate total size.
+	parts := make([]Slice[O], len(s))
+	total := 0
+	for i, v := range s {
+		parts[i] = fn(v)
+		total += len(parts[i])
+	}
+	result := make(Slice[O], 0, total)
+	for _, p := range parts {
+		result = append(result, p...)
 	}
 	return result
 }
@@ -293,7 +304,7 @@ func Exclude[T comparable](s Slice[T], elems ...T) Slice[T] {
 
 // Intersect returns elements present in both slices (keyed by fn).
 func Intersect[T any, K comparable](a, b Slice[T], fn func(T) K) Slice[T] {
-	keys := make(map[K]struct{})
+	keys := make(map[K]struct{}, len(b))
 	for _, v := range b {
 		keys[fn(v)] = struct{}{}
 	}
@@ -305,7 +316,7 @@ func Intersect[T any, K comparable](a, b Slice[T], fn func(T) K) Slice[T] {
 
 // Difference returns elements from a that are NOT in b (keyed by fn).
 func Difference[T any, K comparable](a, b Slice[T], fn func(T) K) Slice[T] {
-	keys := make(map[K]struct{})
+	keys := make(map[K]struct{}, len(b))
 	for _, v := range b {
 		keys[fn(v)] = struct{}{}
 	}

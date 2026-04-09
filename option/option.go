@@ -45,7 +45,9 @@ func (o Option[T]) Filter(fn func(T) bool) Option[T] {
 	if o.valid && fn(o.value) {
 		return o
 	}
-	return None[T]()
+	// Return the zero Option directly — avoids a heap allocation vs None[T]().
+	var zero Option[T]
+	return zero
 }
 
 // Or returns the Option itself if it is Some, otherwise returns other.

@@ -317,8 +317,10 @@ func (s Slice[T]) Find(fn func(T) bool) option.Option[T] {
 
 // Partition splits into two slices: (fn=true, fn=false).
 func (s Slice[T]) Partition(fn func(T) bool) (Slice[T], Slice[T]) {
-	yes := make(Slice[T], 0, len(s)/2+1)
-	no := make(Slice[T], 0, len(s)/2+1)
+	// Pre-allocate len(s) for each side. Worst case one side holds all elements;
+	// this avoids reallocation regardless of how skewed the split is.
+	yes := make(Slice[T], 0, len(s))
+	no := make(Slice[T], 0, len(s))
 	for _, v := range s {
 		if fn(v) {
 			yes = append(yes, v)
