@@ -255,8 +255,21 @@ func (s Slice[T]) Sample() option.Option[T] {
 }
 
 // Samples returns n random elements without repetition.
+// Uses partial Fisher-Yates — O(n) work instead of O(len(s)).
 func (s Slice[T]) Samples(n int) Slice[T] {
-	return s.Shuffle().Limit(n)
+	if n <= 0 || len(s) == 0 {
+		return nil
+	}
+	if n >= len(s) {
+		return s.Shuffle()
+	}
+	result := make(Slice[T], len(s))
+	copy(result, s)
+	for i := 0; i < n; i++ {
+		j := i + rand.Intn(len(s)-i)
+		result[i], result[j] = result[j], result[i]
+	}
+	return result[:n]
 }
 
 // Contains returns true if at least one element satisfies fn.
@@ -316,11 +329,17 @@ func (s Slice[T]) Find(fn func(T) bool) option.Option[T] {
 }
 
 // Partition splits into two slices: (fn=true, fn=false).
+// Uses a two-pass strategy: count first, then allocate exactly, avoiding both
+// over-allocation and reallocation regardless of how skewed the split is.
 func (s Slice[T]) Partition(fn func(T) bool) (Slice[T], Slice[T]) {
-	// Pre-allocate len(s) for each side. Worst case one side holds all elements;
-	// this avoids reallocation regardless of how skewed the split is.
-	yes := make(Slice[T], 0, len(s))
-	no := make(Slice[T], 0, len(s))
+	yesCount := 0
+	for _, v := range s {
+		if fn(v) {
+			yesCount++
+		}
+	}
+	yes := make(Slice[T], 0, yesCount)
+	no := make(Slice[T], 0, len(s)-yesCount)
 	for _, v := range s {
 		if fn(v) {
 			yes = append(yes, v)

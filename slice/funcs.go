@@ -178,7 +178,7 @@ func GroupBy[T any, K comparable](s Slice[T], fn func(T) K) map[K]Slice[T] {
 
 // KeyBy creates a map keyed by fn; last value wins on duplicate keys.
 func KeyBy[T any, K comparable](s Slice[T], fn func(T) K) map[K]T {
-	result := make(map[K]T)
+	result := make(map[K]T, len(s))
 	for _, v := range s {
 		result[fn(v)] = v
 	}
