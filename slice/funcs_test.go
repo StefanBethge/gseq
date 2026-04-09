@@ -158,3 +158,42 @@ func TestTryMapAllDropped(t *testing.T) {
 		t.Fatal("expected empty")
 	}
 }
+
+func TestFilterParallel(t *testing.T) {
+	s := Range(0, parallelThreshold+100)
+	got := FilterParallel(s, func(v int) bool { return v%2 == 0 })
+	want := s.Filter(func(v int) bool { return v%2 == 0 })
+	assertEqual(t, want, got)
+}
+
+func TestFilterParallelN(t *testing.T) {
+	s := Range(0, parallelThreshold+100)
+	got := FilterParallelN(s, 4, func(v int) bool { return v%3 == 0 })
+	want := s.Filter(func(v int) bool { return v%3 == 0 })
+	assertEqual(t, want, got)
+}
+
+func TestFilterParallelSmall(t *testing.T) {
+	// Below threshold → falls back to sequential, order preserved.
+	s := Slice[int]{5, 3, 1, 4, 2}
+	got := FilterParallel(s, func(v int) bool { return v > 2 })
+	assertEqual(t, Slice[int]{5, 3, 4}, got)
+}
+
+func TestExclude(t *testing.T) {
+	s := Slice[int]{1, 2, 3, 4, 5}
+	got := Exclude(s, 2, 4)
+	assertEqual(t, Slice[int]{1, 3, 5}, got)
+}
+
+func TestExcludeNoElems(t *testing.T) {
+	s := Slice[int]{1, 2, 3}
+	got := Exclude(s)
+	assertEqual(t, s, got)
+}
+
+func TestExcludeStrings(t *testing.T) {
+	s := Slice[string]{"a", "b", "c", "d"}
+	got := Exclude(s, "b", "d")
+	assertEqual(t, Slice[string]{"a", "c"}, got)
+}

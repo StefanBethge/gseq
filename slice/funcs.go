@@ -39,36 +39,34 @@ func MapParallel[T, O any](s Slice[T], fn func(T) O) Slice[O] {
 
 // MapParallelN is like MapParallel but uses exactly n workers.
 // Falls back to sequential Map when len(s) < parallelThreshold.
+// Uses direct slice segmentation instead of channels to avoid per-item
+// allocation and channel overhead.
 func MapParallelN[T, O any](s Slice[T], n int, fn func(T) O) Slice[O] {
 	if len(s) < parallelThreshold {
 		return Map(s, fn)
 	}
 	result := make(Slice[O], len(s))
-	if len(s) == 0 {
-		return result
-	}
 	if n > len(s) {
 		n = len(s)
 	}
-	type job struct {
-		i int
-		v T
-	}
-	jobs := make(chan job, len(s))
-	for i, v := range s {
-		jobs <- job{i, v}
-	}
-	close(jobs)
-
+	chunkSize := (len(s) + n - 1) / n
 	var wg sync.WaitGroup
-	wg.Add(n)
-	for range n {
-		go func() {
+	for i := 0; i < n; i++ {
+		start := i * chunkSize
+		if start >= len(s) {
+			break
+		}
+		end := start + chunkSize
+		if end > len(s) {
+			end = len(s)
+		}
+		wg.Add(1)
+		go func(start, end int) {
 			defer wg.Done()
-			for j := range jobs {
-				result[j.i] = fn(j.v)
+			for j := start; j < end; j++ {
+				result[j] = fn(s[j])
 			}
-		}()
+		}(start, end)
 	}
 	wg.Wait()
 	return result
@@ -87,33 +85,82 @@ func MapParallelIndexedN[T, O any](s Slice[T], n int, fn func(int, T) O) Slice[O
 		return MapIndexed(s, fn)
 	}
 	result := make(Slice[O], len(s))
-	if len(s) == 0 {
-		return result
+	if n > len(s) {
+		n = len(s)
+	}
+	chunkSize := (len(s) + n - 1) / n
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		start := i * chunkSize
+		if start >= len(s) {
+			break
+		}
+		end := start + chunkSize
+		if end > len(s) {
+			end = len(s)
+		}
+		wg.Add(1)
+		go func(start, end int) {
+			defer wg.Done()
+			for j := start; j < end; j++ {
+				result[j] = fn(j, s[j])
+			}
+		}(start, end)
+	}
+	wg.Wait()
+	return result
+}
+
+// FilterParallel is like Filter but runs fn concurrently using a worker pool
+// sized to GOMAXPROCS, preserving element order.
+func FilterParallel[T any](s Slice[T], fn func(T) bool) Slice[T] {
+	return FilterParallelN(s, runtime.GOMAXPROCS(0), fn)
+}
+
+// FilterParallelN is like FilterParallel but uses exactly n workers.
+// Falls back to sequential Filter when len(s) < parallelThreshold.
+// Each worker filters its segment into a local slice; results are merged
+// in order after all goroutines finish.
+func FilterParallelN[T any](s Slice[T], n int, fn func(T) bool) Slice[T] {
+	if len(s) < parallelThreshold {
+		return s.Filter(fn)
 	}
 	if n > len(s) {
 		n = len(s)
 	}
-	type job struct {
-		i int
-		v T
-	}
-	jobs := make(chan job, len(s))
-	for i, v := range s {
-		jobs <- job{i, v}
-	}
-	close(jobs)
-
+	chunkSize := (len(s) + n - 1) / n
+	partials := make([]Slice[T], n)
 	var wg sync.WaitGroup
-	wg.Add(n)
-	for range n {
-		go func() {
+	for i := 0; i < n; i++ {
+		start := i * chunkSize
+		if start >= len(s) {
+			break
+		}
+		end := start + chunkSize
+		if end > len(s) {
+			end = len(s)
+		}
+		wg.Add(1)
+		go func(i, start, end int) {
 			defer wg.Done()
-			for j := range jobs {
-				result[j.i] = fn(j.i, j.v)
+			local := make(Slice[T], 0, end-start)
+			for j := start; j < end; j++ {
+				if fn(s[j]) {
+					local = append(local, s[j])
+				}
 			}
-		}()
+			partials[i] = local
+		}(i, start, end)
 	}
 	wg.Wait()
+	total := 0
+	for _, p := range partials {
+		total += len(p)
+	}
+	result := make(Slice[T], 0, total)
+	for _, p := range partials {
+		result = append(result, p...)
+	}
 	return result
 }
 
@@ -181,6 +228,23 @@ func Uniq[T any, K comparable](s Slice[T], fn func(T) K) Slice[T] {
 	return result
 }
 
+// Exclude returns a copy of s without any element equal to any of elems.
+// Unlike Without, it requires T to be comparable and runs in O(n + m) time
+// instead of O(n × m), making it efficient for large exclusion sets.
+func Exclude[T comparable](s Slice[T], elems ...T) Slice[T] {
+	if len(elems) == 0 {
+		return s
+	}
+	set := make(map[T]struct{}, len(elems))
+	for _, e := range elems {
+		set[e] = struct{}{}
+	}
+	return s.Filter(func(v T) bool {
+		_, found := set[v]
+		return !found
+	})
+}
+
 // Intersect returns elements present in both slices (keyed by fn).
 func Intersect[T any, K comparable](a, b Slice[T], fn func(T) K) Slice[T] {
 	keys := make(map[K]struct{})
@@ -225,7 +289,7 @@ func Zip[A, B, O any](a Slice[A], b Slice[B], fn func(A, B) O) Slice[O] {
 
 // Compact extracts the values from a Slice of Options, discarding all None entries.
 func Compact[T any](s Slice[option.Option[T]]) Slice[T] {
-	var result Slice[T]
+	result := make(Slice[T], 0, len(s))
 	for _, o := range s {
 		if o.IsSome() {
 			result = append(result, o.Unwrap())
@@ -237,7 +301,7 @@ func Compact[T any](s Slice[option.Option[T]]) Slice[T] {
 // TryMap applies fn to each element, collecting only the Some results.
 // Elements for which fn returns None are silently dropped.
 func TryMap[T, O any](s Slice[T], fn func(T) option.Option[O]) Slice[O] {
-	var result Slice[O]
+	result := make(Slice[O], 0, len(s))
 	for _, v := range s {
 		if o := fn(v); o.IsSome() {
 			result = append(result, o.Unwrap())

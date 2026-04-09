@@ -157,27 +157,27 @@ func (s Slice[T]) EachParallelN(n int, fn func(T)) {
 		s.Each(fn)
 		return
 	}
-	if len(s) == 0 {
-		return
-	}
 	if n > len(s) {
 		n = len(s)
 	}
-	jobs := make(chan T, len(s))
-	for _, v := range s {
-		jobs <- v
-	}
-	close(jobs)
-
+	chunkSize := (len(s) + n - 1) / n
 	var wg sync.WaitGroup
-	wg.Add(n)
-	for range n {
-		go func() {
+	for i := 0; i < n; i++ {
+		start := i * chunkSize
+		if start >= len(s) {
+			break
+		}
+		end := start + chunkSize
+		if end > len(s) {
+			end = len(s)
+		}
+		wg.Add(1)
+		go func(start, end int) {
 			defer wg.Done()
-			for v := range jobs {
-				fn(v)
+			for j := start; j < end; j++ {
+				fn(s[j])
 			}
-		}()
+		}(start, end)
 	}
 	wg.Wait()
 }
@@ -195,31 +195,27 @@ func (s Slice[T]) EachParallelIndexedN(n int, fn func(int, T)) {
 		s.EachIndexed(fn)
 		return
 	}
-	if len(s) == 0 {
-		return
-	}
 	if n > len(s) {
 		n = len(s)
 	}
-	type job struct {
-		i int
-		v T
-	}
-	jobs := make(chan job, len(s))
-	for i, v := range s {
-		jobs <- job{i, v}
-	}
-	close(jobs)
-
+	chunkSize := (len(s) + n - 1) / n
 	var wg sync.WaitGroup
-	wg.Add(n)
-	for range n {
-		go func() {
+	for i := 0; i < n; i++ {
+		start := i * chunkSize
+		if start >= len(s) {
+			break
+		}
+		end := start + chunkSize
+		if end > len(s) {
+			end = len(s)
+		}
+		wg.Add(1)
+		go func(start, end int) {
 			defer wg.Done()
-			for j := range jobs {
-				fn(j.i, j.v)
+			for j := start; j < end; j++ {
+				fn(j, s[j])
 			}
-		}()
+		}(start, end)
 	}
 	wg.Wait()
 }

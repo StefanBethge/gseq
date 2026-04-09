@@ -59,20 +59,24 @@ func (m Map[K, V]) EachParallelN(n int, fn func(K, V)) {
 	if n > len(entries) {
 		n = len(entries)
 	}
-	jobs := make(chan entry, len(entries))
-	for _, e := range entries {
-		jobs <- e
-	}
-	close(jobs)
+	chunkSize := (len(entries) + n - 1) / n
 	var wg sync.WaitGroup
-	wg.Add(n)
-	for range n {
-		go func() {
+	for i := 0; i < n; i++ {
+		start := i * chunkSize
+		if start >= len(entries) {
+			break
+		}
+		end := start + chunkSize
+		if end > len(entries) {
+			end = len(entries)
+		}
+		wg.Add(1)
+		go func(start, end int) {
 			defer wg.Done()
-			for e := range jobs {
-				fn(e.k, e.v)
+			for j := start; j < end; j++ {
+				fn(entries[j].k, entries[j].v)
 			}
-		}()
+		}(start, end)
 	}
 	wg.Wait()
 }
@@ -157,24 +161,24 @@ func MapValuesParallelN[K comparable, V, W any](m Map[K, V], n int, fn func(K, V
 		n = len(entries)
 	}
 	results := make([]result, len(entries))
-	type job struct {
-		i int
-		e entry
-	}
-	jobs := make(chan job, len(entries))
-	for i, e := range entries {
-		jobs <- job{i, e}
-	}
-	close(jobs)
+	chunkSize := (len(entries) + n - 1) / n
 	var wg sync.WaitGroup
-	wg.Add(n)
-	for range n {
-		go func() {
+	for i := 0; i < n; i++ {
+		start := i * chunkSize
+		if start >= len(entries) {
+			break
+		}
+		end := start + chunkSize
+		if end > len(entries) {
+			end = len(entries)
+		}
+		wg.Add(1)
+		go func(start, end int) {
 			defer wg.Done()
-			for j := range jobs {
-				results[j.i] = result{j.e.k, fn(j.e.k, j.e.v)}
+			for j := start; j < end; j++ {
+				results[j] = result{entries[j].k, fn(entries[j].k, entries[j].v)}
 			}
-		}()
+		}(start, end)
 	}
 	wg.Wait()
 	out := make(Map[K, W], len(m))
