@@ -1,7 +1,16 @@
 // Package dict provides a generic, chainable Map type for key-value operations.
 package dict
 
-import "github.com/stefanbethge/gseq/slice"
+import (
+	"runtime"
+	"sync"
+
+	"github.com/stefanbethge/gseq/slice"
+)
+
+// parallelThreshold mirrors the slice package: below this entry count, parallel
+// operations fall back to their sequential equivalents.
+const parallelThreshold = 256
 
 // Map is a generic map type with chainable operations.
 type Map[K comparable, V any] map[K]V
@@ -27,6 +36,45 @@ func (m Map[K, V]) Each(fn func(K, V)) {
 	for k, v := range m {
 		fn(k, v)
 	}
+}
+
+// EachParallel calls fn for every entry concurrently using a worker pool sized
+// to GOMAXPROCS. Falls back to sequential Each for small maps.
+func (m Map[K, V]) EachParallel(fn func(K, V)) {
+	m.EachParallelN(runtime.GOMAXPROCS(0), fn)
+}
+
+// EachParallelN calls fn for every entry using exactly n workers.
+// Falls back to sequential Each when len(m) < parallelThreshold.
+func (m Map[K, V]) EachParallelN(n int, fn func(K, V)) {
+	if len(m) < parallelThreshold {
+		m.Each(fn)
+		return
+	}
+	type entry struct{ k K; v V }
+	entries := make([]entry, 0, len(m))
+	for k, v := range m {
+		entries = append(entries, entry{k, v})
+	}
+	if n > len(entries) {
+		n = len(entries)
+	}
+	jobs := make(chan entry, len(entries))
+	for _, e := range entries {
+		jobs <- e
+	}
+	close(jobs)
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for range n {
+		go func() {
+			defer wg.Done()
+			for e := range jobs {
+				fn(e.k, e.v)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 // Keys returns all keys as a Slice (order not guaranteed).
@@ -82,6 +130,58 @@ func MapValues[K comparable, V, W any](m Map[K, V], fn func(K, V) W) Map[K, W] {
 		result[k] = fn(k, v)
 	}
 	return result
+}
+
+// MapValuesParallel is like MapValues but runs fn concurrently using a worker
+// pool sized to GOMAXPROCS. Falls back to sequential MapValues for small maps.
+func MapValuesParallel[K comparable, V, W any](m Map[K, V], fn func(K, V) W) Map[K, W] {
+	return MapValuesParallelN(m, runtime.GOMAXPROCS(0), fn)
+}
+
+// MapValuesParallelN is like MapValuesParallel but uses exactly n workers.
+// Falls back to sequential MapValues when len(m) < parallelThreshold.
+func MapValuesParallelN[K comparable, V, W any](m Map[K, V], n int, fn func(K, V) W) Map[K, W] {
+	if len(m) < parallelThreshold {
+		return MapValues(m, fn)
+	}
+	type entry struct{ k K; v V }
+	type result struct {
+		k K
+		w W
+	}
+	entries := make([]entry, 0, len(m))
+	for k, v := range m {
+		entries = append(entries, entry{k, v})
+	}
+	if n > len(entries) {
+		n = len(entries)
+	}
+	results := make([]result, len(entries))
+	type job struct {
+		i int
+		e entry
+	}
+	jobs := make(chan job, len(entries))
+	for i, e := range entries {
+		jobs <- job{i, e}
+	}
+	close(jobs)
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for range n {
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				results[j.i] = result{j.e.k, fn(j.e.k, j.e.v)}
+			}
+		}()
+	}
+	wg.Wait()
+	out := make(Map[K, W], len(m))
+	for _, r := range results {
+		out[r.k] = r.w
+	}
+	return out
 }
 
 // Invert swaps keys and values. Last key wins on duplicate values.

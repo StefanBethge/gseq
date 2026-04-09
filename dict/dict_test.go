@@ -3,6 +3,7 @@ package dict
 import (
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/stefanbethge/gseq/slice"
@@ -120,4 +121,51 @@ func TestFromSlice(t *testing.T) {
 	if d["alice"] != 5 || d["bob"] != 3 {
 		t.Fatalf("unexpected result: %v", d)
 	}
+}
+
+func TestEachParallel(t *testing.T) {
+	// Build a map large enough to trigger parallel path.
+	d := make(Map[int, int], parallelThreshold+1)
+	for i := range parallelThreshold + 1 {
+		d[i] = i
+	}
+	var mu sync.Mutex
+	sum := 0
+	d.EachParallel(func(_ int, v int) {
+		mu.Lock()
+		sum += v
+		mu.Unlock()
+	})
+	want := (parallelThreshold) * (parallelThreshold + 1) / 2
+	if sum != want {
+		t.Fatalf("want sum %d, got %d", want, sum)
+	}
+}
+
+func TestEachParallelSmall(t *testing.T) {
+	// Small map → sequential fallback, no goroutines needed.
+	d := Map[string, int]{"a": 1, "b": 2}
+	sum := 0
+	d.EachParallel(func(_ string, v int) { sum += v })
+	assertEqual(t, 3, sum)
+}
+
+func TestMapValuesParallel(t *testing.T) {
+	d := make(Map[int, int], parallelThreshold+1)
+	for i := range parallelThreshold + 1 {
+		d[i] = i
+	}
+	got := MapValuesParallel(d, func(_ int, v int) int { return v * 2 })
+	for k, v := range d {
+		if got[k] != v*2 {
+			t.Fatalf("key %d: want %d got %d", k, v*2, got[k])
+		}
+	}
+}
+
+func TestMapValuesParallelSmall(t *testing.T) {
+	d := Map[string, int]{"x": 3, "y": 4}
+	got := MapValuesParallel(d, func(_ string, v int) int { return v * 10 })
+	assertEqual(t, 30, got["x"])
+	assertEqual(t, 40, got["y"])
 }

@@ -151,7 +151,12 @@ func (s Slice[T]) EachParallel(fn func(T)) {
 }
 
 // EachParallelN calls fn for every element using a pool of n workers.
+// Falls back to sequential Each when len(s) < parallelThreshold.
 func (s Slice[T]) EachParallelN(n int, fn func(T)) {
+	if len(s) < parallelThreshold {
+		s.Each(fn)
+		return
+	}
 	if len(s) == 0 {
 		return
 	}
@@ -184,8 +189,12 @@ func (s Slice[T]) EachParallelIndexed(fn func(int, T)) {
 }
 
 // EachParallelIndexedN calls fn(index, value) for every element using a pool
-// of n workers.
+// of n workers. Falls back to sequential EachIndexed when len(s) < parallelThreshold.
 func (s Slice[T]) EachParallelIndexedN(n int, fn func(int, T)) {
+	if len(s) < parallelThreshold {
+		s.EachIndexed(fn)
+		return
+	}
 	if len(s) == 0 {
 		return
 	}

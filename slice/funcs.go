@@ -7,6 +7,11 @@ import (
 	"github.com/stefanbethge/gseq/option"
 )
 
+// parallelThreshold is the minimum slice length for which spawning a worker
+// pool is worthwhile. Below this threshold all parallel functions fall back to
+// their sequential equivalents to avoid goroutine and channel overhead.
+const parallelThreshold = 256
+
 // Map transforms every element from T to O.
 func Map[T, O any](s Slice[T], fn func(T) O) Slice[O] {
 	result := make(Slice[O], len(s))
@@ -33,7 +38,11 @@ func MapParallel[T, O any](s Slice[T], fn func(T) O) Slice[O] {
 }
 
 // MapParallelN is like MapParallel but uses exactly n workers.
+// Falls back to sequential Map when len(s) < parallelThreshold.
 func MapParallelN[T, O any](s Slice[T], n int, fn func(T) O) Slice[O] {
+	if len(s) < parallelThreshold {
+		return Map(s, fn)
+	}
 	result := make(Slice[O], len(s))
 	if len(s) == 0 {
 		return result
@@ -72,7 +81,11 @@ func MapParallelIndexed[T, O any](s Slice[T], fn func(int, T) O) Slice[O] {
 }
 
 // MapParallelIndexedN is like MapParallelIndexed but uses exactly n workers.
+// Falls back to sequential MapIndexed when len(s) < parallelThreshold.
 func MapParallelIndexedN[T, O any](s Slice[T], n int, fn func(int, T) O) Slice[O] {
+	if len(s) < parallelThreshold {
+		return MapIndexed(s, fn)
+	}
 	result := make(Slice[O], len(s))
 	if len(s) == 0 {
 		return result
