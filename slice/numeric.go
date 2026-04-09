@@ -1,6 +1,11 @@
 package slice
 
-import "github.com/stefanbethge/gseq/option"
+import (
+	"runtime"
+	"sync"
+
+	"github.com/stefanbethge/gseq/option"
+)
 
 // Repeat creates a slice with elem repeated n times.
 func Repeat[T any](elem T, n int) Slice[T] {
@@ -40,6 +45,52 @@ func Sum[T Number](s Slice[T]) T {
 	var total T
 	for _, v := range s {
 		total += v
+	}
+	return total
+}
+
+// SumParallel is like Sum but runs concurrently using a worker pool sized to
+// GOMAXPROCS. Each worker sums its segment into a local variable; partial sums
+// are combined sequentially after all workers finish. No mutex required.
+// Falls back to sequential Sum when len(s) < parallelThreshold.
+func SumParallel[T Number](s Slice[T]) T {
+	return SumParallelN(s, runtime.GOMAXPROCS(0))
+}
+
+// SumParallelN is like SumParallel but uses exactly n workers.
+func SumParallelN[T Number](s Slice[T], n int) T {
+	if len(s) < parallelThreshold {
+		return Sum(s)
+	}
+	if n > len(s) {
+		n = len(s)
+	}
+	chunkSize := (len(s) + n - 1) / n
+	partials := make([]T, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		start := i * chunkSize
+		if start >= len(s) {
+			break
+		}
+		end := start + chunkSize
+		if end > len(s) {
+			end = len(s)
+		}
+		wg.Add(1)
+		go func(i, start, end int) {
+			defer wg.Done()
+			var local T
+			for j := start; j < end; j++ {
+				local += s[j]
+			}
+			partials[i] = local
+		}(i, start, end)
+	}
+	wg.Wait()
+	var total T
+	for _, p := range partials {
+		total += p
 	}
 	return total
 }
@@ -105,6 +156,50 @@ func SumBy[T any, N Number](s Slice[T], fn func(T) N) N {
 	var total N
 	for _, v := range s {
 		total += fn(v)
+	}
+	return total
+}
+
+// SumByParallel is like SumBy but runs concurrently using GOMAXPROCS workers.
+// Falls back to sequential SumBy when len(s) < parallelThreshold.
+func SumByParallel[T any, N Number](s Slice[T], fn func(T) N) N {
+	return SumByParallelN(s, runtime.GOMAXPROCS(0), fn)
+}
+
+// SumByParallelN is like SumByParallel but uses exactly n workers.
+func SumByParallelN[T any, N Number](s Slice[T], n int, fn func(T) N) N {
+	if len(s) < parallelThreshold {
+		return SumBy(s, fn)
+	}
+	if n > len(s) {
+		n = len(s)
+	}
+	chunkSize := (len(s) + n - 1) / n
+	partials := make([]N, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		start := i * chunkSize
+		if start >= len(s) {
+			break
+		}
+		end := start + chunkSize
+		if end > len(s) {
+			end = len(s)
+		}
+		wg.Add(1)
+		go func(i, start, end int) {
+			defer wg.Done()
+			var local N
+			for j := start; j < end; j++ {
+				local += fn(s[j])
+			}
+			partials[i] = local
+		}(i, start, end)
+	}
+	wg.Wait()
+	var total N
+	for _, p := range partials {
+		total += p
 	}
 	return total
 }

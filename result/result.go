@@ -98,8 +98,8 @@ func MapErr[T, E, F any](r Result[T, E], fn func(E) F) Result[T, F] {
 // Partition splits a slice of Results into a slice of success values and a
 // slice of errors. Order within each output slice matches the input order.
 func Partition[T, E any](s slice.Slice[Result[T, E]]) (slice.Slice[T], slice.Slice[E]) {
-	var oks slice.Slice[T]
-	var errs slice.Slice[E]
+	oks := make(slice.Slice[T], 0, len(s)/2+1)
+	errs := make(slice.Slice[E], 0, len(s)/2+1)
 	for _, r := range s {
 		if r.ok {
 			oks = append(oks, r.value)

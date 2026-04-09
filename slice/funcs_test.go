@@ -197,3 +197,41 @@ func TestExcludeStrings(t *testing.T) {
 	got := Exclude(s, "b", "d")
 	assertEqual(t, Slice[string]{"a", "c"}, got)
 }
+
+func TestReduceParallel(t *testing.T) {
+	s := Range(0, parallelThreshold+100)
+	want := Reduce(s, 0, func(acc, v int) int { return acc + v })
+	got := ReduceParallel(s, 0, func(a, b int) int { return a + b })
+	assertEqual(t, want, got)
+}
+
+func TestReduceParallelN(t *testing.T) {
+	s := Range(1, parallelThreshold+1)
+	want := Reduce(s, 0, func(acc, v int) int { return acc + v })
+	got := ReduceParallelN(s, 4, 0, func(a, b int) int { return a + b })
+	assertEqual(t, want, got)
+}
+
+func TestReduceParallelSmall(t *testing.T) {
+	// Below threshold → falls back to sequential.
+	s := Slice[int]{1, 2, 3, 4, 5}
+	got := ReduceParallel(s, 0, func(a, b int) int { return a + b })
+	assertEqual(t, 15, got)
+}
+
+func TestReduceParallelMax(t *testing.T) {
+	s := Range(0, parallelThreshold+50)
+	want := Reduce(s, 0, func(acc, v int) int {
+		if v > acc {
+			return v
+		}
+		return acc
+	})
+	got := ReduceParallel(s, 0, func(a, b int) int {
+		if b > a {
+			return b
+		}
+		return a
+	})
+	assertEqual(t, want, got)
+}

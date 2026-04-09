@@ -92,3 +92,41 @@ func TestSumBy(t *testing.T) {
 		t.Fatalf("expected 7.0, got %v", got)
 	}
 }
+
+func TestSumParallel(t *testing.T) {
+	s := Range(0, parallelThreshold+100)
+	want := Sum(s)
+	got := SumParallel(s)
+	if got != want {
+		t.Fatalf("want %d, got %d", want, got)
+	}
+}
+
+func TestSumParallelN(t *testing.T) {
+	s := Range(1, parallelThreshold+1)
+	want := Sum(s)
+	got := SumParallelN(s, 4)
+	if got != want {
+		t.Fatalf("want %d, got %d", want, got)
+	}
+}
+
+func TestSumParallelSmall(t *testing.T) {
+	s := Slice[int]{1, 2, 3, 4, 5}
+	if SumParallel(s) != 15 {
+		t.Fatal("expected 15")
+	}
+}
+
+func TestSumByParallel(t *testing.T) {
+	type Item struct{ V int }
+	s := make(Slice[Item], parallelThreshold+50)
+	for i := range s {
+		s[i] = Item{i + 1}
+	}
+	want := SumBy(s, func(x Item) int { return x.V })
+	got := SumByParallel(s, func(x Item) int { return x.V })
+	if got != want {
+		t.Fatalf("want %d, got %d", want, got)
+	}
+}

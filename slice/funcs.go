@@ -192,6 +192,52 @@ func Reduce[T, O any](s Slice[T], initial O, fn func(O, T) O) O {
 	return acc
 }
 
+// ReduceParallel reduces s in parallel using fn sized to GOMAXPROCS workers.
+// fn must be associative: the result of combining segments in any order must
+// equal the sequential result. Typical uses: sum, max/min, merge.
+// Falls back to sequential Reduce when len(s) < parallelThreshold.
+func ReduceParallel[T any](s Slice[T], initial T, fn func(T, T) T) T {
+	return ReduceParallelN(s, runtime.GOMAXPROCS(0), initial, fn)
+}
+
+// ReduceParallelN is like ReduceParallel but uses exactly n workers.
+func ReduceParallelN[T any](s Slice[T], n int, initial T, fn func(T, T) T) T {
+	if len(s) < parallelThreshold {
+		return Reduce(s, initial, fn)
+	}
+	if n > len(s) {
+		n = len(s)
+	}
+	chunkSize := (len(s) + n - 1) / n
+	partials := make([]T, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		start := i * chunkSize
+		if start >= len(s) {
+			break
+		}
+		end := start + chunkSize
+		if end > len(s) {
+			end = len(s)
+		}
+		wg.Add(1)
+		go func(i, start, end int) {
+			defer wg.Done()
+			acc := initial
+			for j := start; j < end; j++ {
+				acc = fn(acc, s[j])
+			}
+			partials[i] = acc
+		}(i, start, end)
+	}
+	wg.Wait()
+	acc := initial
+	for _, p := range partials {
+		acc = fn(acc, p)
+	}
+	return acc
+}
+
 // FlatMap applies fn to each element and flattens the result.
 func FlatMap[T, O any](s Slice[T], fn func(T) Slice[O]) Slice[O] {
 	result := make(Slice[O], 0, len(s))
