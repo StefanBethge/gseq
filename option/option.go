@@ -85,3 +85,14 @@ func FlatMap[T, U any](o Option[T], fn func(T) Option[U]) Option[U] {
 	}
 	return fn(o.value)
 }
+
+// Coalesce returns the first Some value among the given options.
+// Returns None if all options are None or no options are provided.
+func Coalesce[T any](opts ...Option[T]) Option[T] {
+	for _, o := range opts {
+		if o.IsSome() {
+			return o
+		}
+	}
+	return None[T]()
+}

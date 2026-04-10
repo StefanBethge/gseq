@@ -129,6 +129,29 @@ func (s Slice[T]) Pairwise() []Slice[T] {
 	return s.Window(2)
 }
 
+// TakeWhile returns elements from the start of the slice as long as fn returns
+// true, stopping at the first element for which fn returns false.
+func (s Slice[T]) TakeWhile(fn func(T) bool) Slice[T] {
+	result := make(Slice[T], 0, len(s))
+	for _, v := range s {
+		if !fn(v) {
+			break
+		}
+		result = append(result, v)
+	}
+	return result
+}
+
+// DropWhile skips elements from the start of the slice as long as fn returns
+// true, then returns all remaining elements unchanged.
+func (s Slice[T]) DropWhile(fn func(T) bool) Slice[T] {
+	i := 0
+	for i < len(s) && fn(s[i]) {
+		i++
+	}
+	return s[i:]
+}
+
 // Each calls fn for every element.
 func (s Slice[T]) Each(fn func(T)) {
 	for _, v := range s {
