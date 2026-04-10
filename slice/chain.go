@@ -131,15 +131,14 @@ func (s Slice[T]) Pairwise() []Slice[T] {
 
 // TakeWhile returns elements from the start of the slice as long as fn returns
 // true, stopping at the first element for which fn returns false.
+// Returns a zero-copy sub-slice (shares the backing array with s), consistent
+// with Limit and Skip.
 func (s Slice[T]) TakeWhile(fn func(T) bool) Slice[T] {
-	result := make(Slice[T], 0, len(s))
-	for _, v := range s {
-		if !fn(v) {
-			break
-		}
-		result = append(result, v)
+	i := 0
+	for i < len(s) && fn(s[i]) {
+		i++
 	}
-	return result
+	return s[:i]
 }
 
 // DropWhile skips elements from the start of the slice as long as fn returns

@@ -138,6 +138,9 @@ func (m Map[K, V]) Pick(keys ...K) Map[K, V] {
 }
 
 // Omit returns a new Map with the given keys removed.
+// Note: Omit always iterates all entries to build the result, so its cost is
+// O(len(m)+len(keys)). When removing a small number of keys from a large map,
+// Filter is more explicit; when keeping a small number of keys, Pick is faster.
 func (m Map[K, V]) Omit(keys ...K) Map[K, V] {
 	skip := make(map[K]struct{}, len(keys))
 	for _, k := range keys {

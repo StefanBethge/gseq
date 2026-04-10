@@ -398,24 +398,23 @@ func Scan[T, O any](s Slice[T], initial O, fn func(O, T) O) Slice[O] {
 
 // ChunkBy splits s into groups of consecutive elements that share the same key
 // as returned by fn. A new group starts every time the key changes.
+// Each chunk is a zero-copy sub-slice of s (shares the backing array).
 func ChunkBy[T any, K comparable](s Slice[T], fn func(T) K) []Slice[T] {
 	if len(s) == 0 {
 		return nil
 	}
 	var result []Slice[T]
-	current := Slice[T]{s[0]}
+	start := 0
 	currentKey := fn(s[0])
-	for _, v := range s[1:] {
-		key := fn(v)
+	for i := 1; i < len(s); i++ {
+		key := fn(s[i])
 		if key != currentKey {
-			result = append(result, current)
-			current = Slice[T]{v}
+			result = append(result, s[start:i])
+			start = i
 			currentKey = key
-		} else {
-			current = append(current, v)
 		}
 	}
-	return append(result, current)
+	return append(result, s[start:])
 }
 
 // Associate builds a map from s by applying fn to each element to derive a
