@@ -366,3 +366,88 @@ func TryMap[T, O any](s Slice[T], fn func(T) option.Option[O]) Slice[O] {
 	}
 	return result
 }
+
+// TryReduce reduces s to a single value using fn, which may return an error.
+// Stops at the first error and returns the accumulated value so far together
+// with the error. Returns (initial, nil) for an empty slice.
+func TryReduce[T, O any](s Slice[T], initial O, fn func(O, T) (O, error)) (O, error) {
+	acc := initial
+	for _, v := range s {
+		var err error
+		acc, err = fn(acc, v)
+		if err != nil {
+			return acc, err
+		}
+	}
+	return acc, nil
+}
+
+// Scan is like Reduce but returns all intermediate accumulator values.
+// The result always has len(s)+1 elements: result[0] == initial,
+// result[i+1] == fn(result[i], s[i]).
+func Scan[T, O any](s Slice[T], initial O, fn func(O, T) O) Slice[O] {
+	result := make(Slice[O], len(s)+1)
+	result[0] = initial
+	acc := initial
+	for i, v := range s {
+		acc = fn(acc, v)
+		result[i+1] = acc
+	}
+	return result
+}
+
+// ChunkBy splits s into groups of consecutive elements that share the same key
+// as returned by fn. A new group starts every time the key changes.
+// Each chunk is a zero-copy sub-slice of s (shares the backing array).
+func ChunkBy[T any, K comparable](s Slice[T], fn func(T) K) []Slice[T] {
+	if len(s) == 0 {
+		return nil
+	}
+	var result []Slice[T]
+	start := 0
+	currentKey := fn(s[0])
+	for i := 1; i < len(s); i++ {
+		key := fn(s[i])
+		if key != currentKey {
+			result = append(result, s[start:i])
+			start = i
+			currentKey = key
+		}
+	}
+	return append(result, s[start:])
+}
+
+// Associate builds a map from s by applying fn to each element to derive a
+// key-value pair. Last value wins on duplicate keys. Unlike KeyBy, both the
+// key and the value can differ from the element type.
+func Associate[T any, K comparable, V any](s Slice[T], fn func(T) (K, V)) map[K]V {
+	result := make(map[K]V, len(s))
+	for _, v := range s {
+		k, val := fn(v)
+		result[k] = val
+	}
+	return result
+}
+
+// Interleave merges multiple slices in round-robin order.
+// Elements are taken one-by-one from each slice in turn; shorter slices are
+// exhausted early and skipped for subsequent rounds.
+func Interleave[T any](slices ...Slice[T]) Slice[T] {
+	total := 0
+	maxLen := 0
+	for _, s := range slices {
+		total += len(s)
+		if len(s) > maxLen {
+			maxLen = len(s)
+		}
+	}
+	result := make(Slice[T], 0, total)
+	for i := 0; i < maxLen; i++ {
+		for _, s := range slices {
+			if i < len(s) {
+				result = append(result, s[i])
+			}
+		}
+	}
+	return result
+}

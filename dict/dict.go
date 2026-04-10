@@ -125,6 +125,66 @@ func (m Map[K, V]) Len() int { return len(m) }
 // ToMap converts back to a plain Go map.
 func (m Map[K, V]) ToMap() map[K]V { return map[K]V(m) }
 
+// Pick returns a new Map containing only the given keys.
+// Keys that are absent in m are silently skipped.
+func (m Map[K, V]) Pick(keys ...K) Map[K, V] {
+	result := make(Map[K, V], len(keys))
+	for _, k := range keys {
+		if v, ok := m[k]; ok {
+			result[k] = v
+		}
+	}
+	return result
+}
+
+// Omit returns a new Map with the given keys removed.
+// Note: Omit always iterates all entries to build the result, so its cost is
+// O(len(m)+len(keys)). When removing a small number of keys from a large map,
+// Filter is more explicit; when keeping a small number of keys, Pick is faster.
+func (m Map[K, V]) Omit(keys ...K) Map[K, V] {
+	skip := make(map[K]struct{}, len(keys))
+	for _, k := range keys {
+		skip[k] = struct{}{}
+	}
+	result := make(Map[K, V], len(m))
+	for k, v := range m {
+		if _, found := skip[k]; !found {
+			result[k] = v
+		}
+	}
+	return result
+}
+
+// Merge returns a new Map containing all entries from both m and other.
+// When a key exists in both maps, the value from other wins.
+func (m Map[K, V]) Merge(other Map[K, V]) Map[K, V] {
+	result := make(Map[K, V], len(m)+len(other))
+	for k, v := range m {
+		result[k] = v
+	}
+	for k, v := range other {
+		result[k] = v
+	}
+	return result
+}
+
+// MergeWith is like Merge but calls fn(key, leftVal, rightVal) to resolve
+// conflicts when a key exists in both maps.
+func (m Map[K, V]) MergeWith(other Map[K, V], fn func(K, V, V) V) Map[K, V] {
+	result := make(Map[K, V], len(m)+len(other))
+	for k, v := range m {
+		result[k] = v
+	}
+	for k, v := range other {
+		if existing, ok := result[k]; ok {
+			result[k] = fn(k, existing, v)
+		} else {
+			result[k] = v
+		}
+	}
+	return result
+}
+
 // ─── FREE FUNCTIONS ───────────────────────────────────────────────────────────
 
 // MapValues transforms each value using fn, producing a new Map.
@@ -212,6 +272,16 @@ func FromSlice[T any, K comparable, V any](s slice.Slice[T], fn func(T) (K, V)) 
 	for _, v := range s {
 		k, val := fn(v)
 		result[k] = val
+	}
+	return result
+}
+
+// MapKeys transforms each key using fn, producing a new Map with the new key
+// type K2. Last value wins when multiple old keys map to the same new key.
+func MapKeys[K comparable, K2 comparable, V any](m Map[K, V], fn func(K, V) K2) Map[K2, V] {
+	result := make(Map[K2, V], len(m))
+	for k, v := range m {
+		result[fn(k, v)] = v
 	}
 	return result
 }
