@@ -19,6 +19,15 @@ func Ok[T, E any](v T) Result[T, E] { return Result[T, E]{value: v, ok: true} }
 // Err wraps an error value in a Result.
 func Err[T, E any](e E) Result[T, E] { return Result[T, E]{err: e} }
 
+// FromOption converts an Option to a Result.
+// If the Option is None, the result is Err(errIfNone).
+func FromOption[T, E any](o option.Option[T], errIfNone E) Result[T, E] {
+	if v, ok := o.Get(); ok {
+		return Ok[T, E](v)
+	}
+	return Err[T, E](errIfNone)
+}
+
 // FromGoError wraps a standard Go (value, error) pair into a Result.
 // If err is nil the result is Ok(v), otherwise Err(err).
 func FromGoError[T any](v T, err error) Result[T, error] {
@@ -54,6 +63,14 @@ func (r Result[T, E]) UnwrapErr() E {
 func (r Result[T, E]) UnwrapOr(fallback T) T {
 	if !r.ok {
 		return fallback
+	}
+	return r.value
+}
+
+// UnwrapOrElse is the lazy variant of UnwrapOr: calls fn only if the Result is Err.
+func (r Result[T, E]) UnwrapOrElse(fn func() T) T {
+	if !r.ok {
+		return fn()
 	}
 	return r.value
 }

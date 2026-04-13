@@ -35,6 +35,14 @@ func (o Option[T]) UnwrapOr(fallback T) T {
 	return o.value
 }
 
+// UnwrapOrElse is the lazy variant of UnwrapOr: calls fn only if the Option is None.
+func (o Option[T]) UnwrapOrElse(fn func() T) T {
+	if !o.valid {
+		return fn()
+	}
+	return o.value
+}
+
 // Get returns the underlying (value, ok) pair for use in if-assignments.
 func (o Option[T]) Get() (T, bool) {
 	return o.value, o.valid
