@@ -272,10 +272,10 @@ d.ToMap()                                                   // map[string]int{..
 // Merge — other's values win on duplicate keys
 merged := d.Merge(dict.Map[string, int]{"alice": 100, "dave": 70})
 
-// MergeWith — custom resolution for duplicate keys
+// MergeWith — custom resolution for duplicate keys (key, left, right)
 merged := d.MergeWith(
     dict.Map[string, int]{"alice": 100, "dave": 70},
-    func(existing, incoming int) int { return max(existing, incoming) },
+    func(_ string, existing, incoming int) int { return max(existing, incoming) },
 )
 ```
 

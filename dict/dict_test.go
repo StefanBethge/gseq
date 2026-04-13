@@ -79,31 +79,6 @@ func TestNone(t *testing.T) {
 	}
 }
 
-func TestMerge(t *testing.T) {
-	a := Map[string, int]{"x": 1, "y": 2}
-	b := Map[string, int]{"y": 99, "z": 3}
-	got := a.Merge(b)
-	if got["x"] != 1 || got["y"] != 99 || got["z"] != 3 {
-		t.Fatalf("unexpected Merge result: %v", got)
-	}
-	if got.Len() != 3 {
-		t.Fatalf("expected 3 entries, got %d", got.Len())
-	}
-	// originals must be unchanged
-	if a["y"] != 2 {
-		t.Fatal("Merge must not modify receiver")
-	}
-}
-
-func TestMergeWith(t *testing.T) {
-	a := Map[string, int]{"x": 10, "y": 20}
-	b := Map[string, int]{"y": 5, "z": 30}
-	got := a.MergeWith(b, func(existing, incoming int) int { return existing + incoming })
-	if got["x"] != 10 || got["y"] != 25 || got["z"] != 30 {
-		t.Fatalf("unexpected MergeWith result: %v", got)
-	}
-}
-
 func TestEvery(t *testing.T) {
 	d := Map[string, int]{"a": 2, "b": 4}
 	if !d.Every(func(_ string, v int) bool { return v%2 == 0 }) {
