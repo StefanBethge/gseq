@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stefanbethge/gseq/option"
 	"github.com/stefanbethge/gseq/slice"
 )
 
@@ -132,6 +133,32 @@ func TestMapErr(t *testing.T) {
 	r2 := MapErr(Ok[int, string](5), func(e string) error { return errors.New(e) })
 	if r2.IsErr() || r2.Unwrap() != 5 {
 		t.Fatalf("Ok should pass through MapErr unchanged: %v", r2)
+	}
+}
+
+func TestUnwrapOrElse(t *testing.T) {
+	called := false
+	got := Ok[int, string](7).UnwrapOrElse(func() int {
+		called = true
+		return 99
+	})
+	if got != 7 || called {
+		t.Fatal("UnwrapOrElse should not call fn when Ok")
+	}
+	got = Err[int, string]("fail").UnwrapOrElse(func() int { return 42 })
+	if got != 42 {
+		t.Fatalf("expected 42, got %d", got)
+	}
+}
+
+func TestFromOption(t *testing.T) {
+	r := FromOption[int, string](option.Some(5), "missing")
+	if r.IsErr() || r.Unwrap() != 5 {
+		t.Fatalf("expected Ok(5), got %v", r)
+	}
+	r2 := FromOption[int, string](option.None[int](), "missing")
+	if r2.IsOk() || r2.UnwrapErr() != "missing" {
+		t.Fatalf("expected Err(missing), got %v", r2)
 	}
 }
 

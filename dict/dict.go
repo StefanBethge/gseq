@@ -119,6 +119,41 @@ func (m Map[K, V]) Every(fn func(K, V) bool) bool {
 	return true
 }
 
+// None returns true if NO entry satisfies fn.
+func (m Map[K, V]) None(fn func(K, V) bool) bool {
+	return !m.Contains(fn)
+}
+
+// Merge returns a new Map with all entries from m and other.
+// If both maps contain the same key, the value from other takes precedence.
+func (m Map[K, V]) Merge(other Map[K, V]) Map[K, V] {
+	result := make(Map[K, V], len(m)+len(other))
+	for k, v := range m {
+		result[k] = v
+	}
+	for k, v := range other {
+		result[k] = v
+	}
+	return result
+}
+
+// MergeWith returns a new Map merged from m and other.
+// For duplicate keys fn is called with (existing, incoming) to produce the merged value.
+func (m Map[K, V]) MergeWith(other Map[K, V], fn func(existing, incoming V) V) Map[K, V] {
+	result := make(Map[K, V], len(m)+len(other))
+	for k, v := range m {
+		result[k] = v
+	}
+	for k, v := range other {
+		if existing, ok := result[k]; ok {
+			result[k] = fn(existing, v)
+		} else {
+			result[k] = v
+		}
+	}
+	return result
+}
+
 // Len returns the number of entries.
 func (m Map[K, V]) Len() int { return len(m) }
 

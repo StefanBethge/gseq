@@ -33,6 +33,7 @@ opt.IsSome()           // true
 opt.IsNone()           // false
 opt.Unwrap()           // 42  — panics if None
 opt.UnwrapOr(0)        // 42  — safe fallback
+opt.UnwrapOrElse(func() int { return computeDefault() }) // lazy fallback
 v, ok := opt.Get()     // classic (T, bool) when needed
 ```
 
@@ -50,6 +51,7 @@ result := findUser(id).                          // Option[User]
 | `.Filter(fn)` | `Some(v)` → `None` if `fn(v)` is false |
 | `.Or(other)` | returns itself if `Some`, otherwise `other` |
 | `.OrElse(fn)` | lazy variant of `Or` — `fn` is only called when `None` |
+| `.UnwrapOrElse(fn)` | lazy variant of `UnwrapOr` — `fn` is only called when `None` |
 
 ### Free functions
 
@@ -263,8 +265,18 @@ d.Values()  // slice.Slice[int]
 
 d.Contains(func(k string, v int) bool { return v == 100 }) // false
 d.Every(func(k string, v int) bool { return v > 50 })      // true
+d.None(func(k string, v int) bool { return v < 0 })        // true
 d.Len()                                                     // 3
 d.ToMap()                                                   // map[string]int{...}
+
+// Merge — other's values win on duplicate keys
+merged := d.Merge(dict.Map[string, int]{"alice": 100, "dave": 70})
+
+// MergeWith — custom resolution for duplicate keys
+merged := d.MergeWith(
+    dict.Map[string, int]{"alice": 100, "dave": 70},
+    func(existing, incoming int) int { return max(existing, incoming) },
+)
 ```
 
 ### Free functions
@@ -311,6 +323,7 @@ r.IsErr()        // false / true
 r.Unwrap()       // value — panics on Err
 r.UnwrapErr()    // error — panics on Ok
 r.UnwrapOr(0)    // safe fallback
+r.UnwrapOrElse(func() int { return computeDefault() }) // lazy fallback
 r.ToOption()     // option.Option[T] — error is discarded
 ```
 
@@ -379,10 +392,8 @@ failures.Each(func(e RecordError) {
 // Result → Option (error is discarded)
 opt := result.FromGoError(strconv.Atoi(s)).ToOption()
 
-// Option → Result (define the error yourself)
-r := option.FlatMap(findUser(id), func(u User) option.Option[string] {
-    return option.Some(u.Email)
-})
+// Option → Result (supply the error value for the None case)
+r := result.FromOption(findUser(id), errors.New("user not found")) // Result[User, error]
 ```
 
 ---

@@ -125,6 +125,21 @@ func TestFlatMap(t *testing.T) {
 	}
 }
 
+func TestUnwrapOrElse(t *testing.T) {
+	called := false
+	got := Some(7).UnwrapOrElse(func() int {
+		called = true
+		return 99
+	})
+	if got != 7 || called {
+		t.Fatal("UnwrapOrElse should not call fn when Some")
+	}
+	got = None[int]().UnwrapOrElse(func() int { return 42 })
+	if got != 42 {
+		t.Fatalf("expected 42, got %d", got)
+	}
+}
+
 func TestChaining(t *testing.T) {
 	// Or → Filter → Map → UnwrapOr pipeline
 	result := None[int]().
