@@ -1,447 +1,263 @@
 # gseq
 
-A generic, functional data structure library for Go 1.23+, inspired by [samber/lo](https://github.com/samber/lo).
+A small, coherent generics toolkit for Go.
 
-Four independent packages with a clear dependency chain:
+`gseq` brings together four focused building blocks:
 
+- `option`: explicit optional values
+- `result`: explicit success/error values
+- `slice`: chainable slice helpers with parallel and iterator support
+- `dict`: chainable map helpers
+
+It is built for teams that want a tighter, more opinionated alternative to mixing `lo`, `mo`, ad-hoc helpers, and raw `iter.Seq` utilities across a codebase.
+
+Dependency policy:
+
+- no external runtime dependencies
+- standard library only
+- small enough to vendor, audit, and keep around for a long time
+
+## Why gseq
+
+Go already gives you good primitives, and libraries like `lo` and `mo` cover a lot of ground.
+
+`gseq` exists for a different tradeoff:
+
+- smaller API surface
+- consistent naming and behavior across packages
+- first-class support for both eager collections and lazy iterators
+- explicit `Option` and `Result` types without pulling in a large FP toolbox
+- built-in parallel helpers for the cases where they are actually useful
+- zero third-party dependencies
+
+If you want a broad utility library, use `lo`.
+If you want a compact, cohesive foundation for collection work and explicit value handling, use `gseq`.
+
+## Packages
+
+```text
+option  <-  slice  <-  dict
+   ^          ^
+result  -------
 ```
-option  ←  slice  ←  dict
-   ↑           ↑
-result  ────────
-```
+
+Import only what you need:
 
 ```go
 import (
+    "github.com/stefanbethge/gseq/dict"
     "github.com/stefanbethge/gseq/option"
     "github.com/stefanbethge/gseq/result"
     "github.com/stefanbethge/gseq/slice"
-    "github.com/stefanbethge/gseq/dict"
 )
 ```
 
----
+## Install
 
-## `option` — Optional value
-
-Replaces the `(T, bool)` pattern with an explicit `Option[T]` type.
-
-```go
-opt := option.Some(42)
-opt := option.None[int]()
-
-opt.IsSome()           // true
-opt.IsNone()           // false
-opt.Unwrap()           // 42  — panics if None
-opt.UnwrapOr(0)        // 42  — safe fallback
-opt.UnwrapOrElse(func() int { return computeDefault() }) // lazy fallback
-v, ok := opt.Get()     // classic (T, bool) when needed
+```bash
+go get github.com/stefanbethge/gseq@latest
 ```
 
-### Method chaining
+Requires Go 1.23+.
+
+`gseq` has no third-party dependencies.
+
+## Quick example
 
 ```go
-result := findUser(id).                          // Option[User]
-    Filter(func(u User) bool { return u.Active }).
-    Or(loadDefaultUser()).                        // fallback if None
-    UnwrapOr(guestUser)
-```
+package main
 
-| Method | Description |
-|---|---|
-| `.Filter(fn)` | `Some(v)` → `None` if `fn(v)` is false |
-| `.Or(other)` | returns itself if `Some`, otherwise `other` |
-| `.OrElse(fn)` | lazy variant of `Or` — `fn` is only called when `None` |
-| `.UnwrapOrElse(fn)` | lazy variant of `UnwrapOr` — `fn` is only called when `None` |
+import (
+    "fmt"
+    "strconv"
 
-### Free functions
+    "github.com/stefanbethge/gseq/option"
+    "github.com/stefanbethge/gseq/result"
+    "github.com/stefanbethge/gseq/slice"
+)
 
-```go
-// Map — transform the value without unwrapping
-upper := option.Map(findName(id), strings.ToUpper) // Option[string]
+func main() {
+    raw := slice.Slice[string]{"12", "x", "7", "21"}
 
-// FlatMap — flatten a nested Option returned by fn
-addr := option.FlatMap(findUser(id), func(u User) option.Option[Address] {
-    return findAddress(u.AddressID)
-})
-```
+    nums := slice.TryMap(raw, func(s string) option.Option[int] {
+        return result.FromGoError(strconv.Atoi(s)).ToOption()
+    })
 
----
-
-## `slice` — Generic slice with method chaining
-
-```go
-s := slice.Slice[int]{3, 1, 4, 1, 5, 9, 2, 6}
-```
-
-### Transformations (return a new slice)
-
-```go
-s.Filter(func(v int) bool { return v > 3 })            // {4, 5, 9, 6}
-s.Reject(func(v int) bool { return v > 3 })            // {3, 1, 1, 2}
-s.Limit(3)                                             // {3, 1, 4}
-s.Skip(2)                                              // {4, 1, 5, 9, 2, 6}
-s.Reverse()                                            // {6, 2, 9, 5, 1, 4, 1, 3}
-s.Shuffle()                                            // random order (copy)
-s.Chunk(3)                                             // [{3,1,4}, {1,5,9}, {2,6}]
-s.Without(func(a, b int) bool { return a == b }, 1, 9) // {3, 4, 5, 2, 6}
-```
-
-### Sorting
-
-```go
-// SortBy — arbitrary comparison function
-s.SortBy(func(a, b int) bool { return a < b }) // ascending
-
-// Sort — for all cmp.Ordered types (int, string, float…)
-slice.Sort(s)
-slice.Sort(slice.Slice[string]{"banana", "apple", "cherry"})
-```
-
-### Windows
-
-```go
-s := slice.Slice[int]{1, 2, 3, 4, 5}
-s.Window(3)   // [{1,2,3}, {2,3,4}, {3,4,5}]
-s.Pairwise()  // [{1,2}, {2,3}, {3,4}, {4,5}]
-```
-
-### Terminators (return a single value)
-
-```go
-s.First()                                           // option.Some(3)
-s.Last()                                            // option.Some(6)
-s.Nth(2)                                            // option.Some(4)
-s.Find(func(v int) bool { return v > 4 })           // option.Some(5)
-s.Sample()                                          // option.Some(<random>)
-s.Samples(3)                                        // 3 random elements
-
-s.Contains(func(v int) bool { return v == 9 })      // true
-s.Every(func(v int) bool { return v > 0 })          // true
-s.None(func(v int) bool { return v < 0 })           // true
-s.Count(func(v int) bool { return v%2 == 0 })       // 3
-s.IndexOf(func(v int) bool { return v == 5 })       // 4
-s.Len()                                             // 8
-s.IsEmpty()                                         // false
-
-yes, no := s.Partition(func(v int) bool { return v%2 == 0 })
-// yes={4,2,6}  no={3,1,1,5,9}
-```
-
-### Iteration
-
-```go
-s.Each(func(v int) { fmt.Println(v) })
-s.EachIndexed(func(i int, v int) { fmt.Printf("[%d] %d\n", i, v) })
-
-s.EachParallel(func(v int) { process(v) })               // parallel, order not guaranteed
-s.EachParallelIndexed(func(i int, v int) { process(i, v) })
-```
-
-### Free functions
-
-```go
-// Map — type transformation T → O
-names := slice.Map(users, func(u User) string { return u.Name })
-
-// MapIndexed — like Map but fn also receives the element's index
-tagged := slice.MapIndexed(users, func(i int, u User) string {
-    return fmt.Sprintf("%d: %s", i, u.Name)
-})
-
-// MapParallel — like Map but parallel (order preserved)
-scores := slice.MapParallel(ids, func(id int) int { return fetchScore(id) })
-
-// MapParallelIndexed — parallel with index
-scores := slice.MapParallelIndexed(ids, func(i int, id int) int { return fetchScore(i, id) })
-
-// Reduce
-total := slice.Reduce(prices, 0.0, func(acc, p float64) float64 { return acc + p })
-
-// GroupBy
-byDept := slice.GroupBy(employees, func(e Employee) string { return e.Department })
-// map[string]Slice[Employee]
-
-// KeyBy — map with a unique key
-byID := slice.KeyBy(users, func(u User) int { return u.ID })
-// map[int]User
-
-// FlatMap
-tags := slice.FlatMap(posts, func(p Post) slice.Slice[string] { return p.Tags })
-
-// Flatten
-slice.Flatten(slice.Slice[slice.Slice[int]]{{1, 2}, {3, 4}}) // {1, 2, 3, 4}
-
-// Uniq — remove duplicates
-slice.Uniq(s, func(v int) int { return v })
-
-// Set operations
-slice.Intersect(a, b, func(v int) int { return v })
-slice.Difference(a, b, func(v int) int { return v })
-slice.Union(a, b, func(v int) int { return v })
-
-// Zip — combine two slices pairwise
-slice.Zip(names, ages, func(name string, age int) string {
-    return fmt.Sprintf("%s (%d)", name, age)
-})
-
-// Numeric
-slice.Sum(slice.Slice[int]{1, 2, 3, 4, 5})                        // 15
-slice.SumBy(products, func(p Product) float64 { return p.Price })
-slice.Min(s)    // option.Some(1)
-slice.Max(s)    // option.Some(9)
-slice.MinBy(products, func(p Product) float64 { return p.Price })
-slice.MaxBy(products, func(p Product) float64 { return p.Price })
-
-// Range
-slice.Range(0, 5)         // {0, 1, 2, 3, 4}
-slice.RangeStep(0, 10, 2) // {0, 2, 4, 6, 8}
-slice.Repeat("x", 4)      // {"x", "x", "x", "x"}
-```
-
-### Option integration
-
-```go
-// Compact — discard None values
-opts := slice.Slice[option.Option[int]]{
-    option.Some(1), option.None[int](), option.Some(3),
-}
-slice.Compact(opts) // {1, 3}
-
-// TryMap — map and filter in one pass: None values are dropped
-nums := slice.TryMap(inputs, func(s string) option.Option[int] {
-    n, err := strconv.Atoi(s)
-    if err != nil {
-        return option.None[int]()
-    }
-    return option.Some(n)
-})
-```
-
-### Iterator API (Go 1.23 `iter.Seq`)
-
-```go
-// Lazy pipeline — no intermediate allocations
-result := slice.Collect(
-    slice.TakeIter(
+    evenSquares := slice.Collect(
         slice.MapIter(
-            slice.FilterIter(s.Iter(), func(v int) bool { return v%2 == 0 }),
+            slice.FilterIter(nums.Iter(), func(v int) bool { return v%2 == 0 }),
             func(v int) int { return v * v },
         ),
-        3,
+    )
+
+    fmt.Println(evenSquares)
+}
+```
+
+## Design principles
+
+### Small by default
+
+`gseq` tries to cover the common 80% cleanly. It does not aim to be the biggest utility library in Go.
+
+### Zero-dependency core
+
+`gseq` is intentionally standard-library-only.
+
+That matters for teams that care about:
+
+- dependency review and supply-chain risk
+- long-term maintenance
+- fast builds and simple upgrades
+- avoiding utility packages that drag in more utility packages
+
+### Explicit values over conventions
+
+Use `Option[T]` instead of hidden sentinel values or ad-hoc `(T, bool)` plumbing when clarity matters.
+Use `Result[T, E]` when you want values and failures to compose directly.
+
+### Eager and lazy pipelines
+
+Most collection code is easier to read with slices.
+Some hot paths benefit from iterator pipelines with fewer intermediate allocations.
+`gseq` supports both styles without splitting your mental model across multiple libraries.
+
+### Parallelism where it pays off
+
+Parallel slice operations are included, but they are not the default for everything.
+Ordered output is preserved where expected, and small inputs stay sequential to avoid overhead.
+
+## Package overview
+
+### option
+
+Use `option.Option[T]` for optional values.
+
+```go
+user := findUser(id)
+
+name := option.Map(user, func(u User) string { return u.Name }).
+    UnwrapOr("guest")
+```
+
+Good fit for:
+
+- lookups that may not return a value
+- staged transformations without repeated `if ok`
+- APIs where `None` is a valid and expected outcome
+
+### result
+
+Use `result.Result[T, E]` for explicit success/failure flows.
+
+```go
+parsed := result.FromGoError(strconv.Atoi(input))
+
+doubled := result.Map(parsed, func(n int) int { return n * 2 })
+```
+
+Good fit for:
+
+- fallible parsing and validation
+- batch processing with typed error context
+- composing operations without losing the error path
+
+### slice
+
+Use `slice.Slice[T]` when you want fluent collection operations without giving up concrete slices.
+
+```go
+top := users.
+    Filter(func(u User) bool { return u.Active }).
+    SortBy(func(a, b User) bool { return a.Score > b.Score }).
+    Limit(5)
+```
+
+Highlights:
+
+- filtering, mapping, grouping, reducing
+- set-like operations
+- numeric helpers
+- parallel transforms
+- `iter.Seq` interop and lazy iterator utilities
+
+### dict
+
+Use `dict.Map[K, V]` for small, chainable map transformations.
+
+```go
+scores := dict.Map[string, int]{"alice": 10, "bob": 7}
+
+curved := dict.MapValues(scores, func(_ string, v int) int { return v + 2 })
+```
+
+## Iterators
+
+Go 1.23 introduced `iter.Seq`.
+`gseq` treats that as a first-class API, not an afterthought.
+
+```go
+out := slice.Collect(
+    slice.TakeIter(
+        slice.MapIter(
+            slice.FilterIter(items.Iter(), keep),
+            transform,
+        ),
+        100,
     ),
 )
-// First 3 squares of even numbers
-
-// Iter2 — index + value
-for i, v := range s.Iter2() {
-    fmt.Printf("[%d] = %d\n", i, v)
-}
-
-// Collect — iter.Seq[T] → Slice[T]
-slice.Collect(someExternalIterator)
 ```
 
----
+Use this style when you want:
 
-## `dict` — Generic map with method chaining
+- fewer intermediate allocations
+- lazy composition
+- clear boundaries between data sources and collectors
 
-```go
-d := dict.Map[string, int]{"alice": 90, "bob": 75, "carol": 88}
-```
+## Parallel operations
 
-### Methods
+`slice.MapParallel`, `slice.FilterParallel`, and related helpers are intended for:
 
-```go
-d.Filter(func(k string, v int) bool { return v >= 80 })
-// {"alice": 90, "carol": 88}
+- CPU-heavy per-item work
+- independent I/O-bound work where controlled concurrency helps
 
-d.Reject(func(k string, v int) bool { return v >= 80 })
-// {"bob": 75}
+They are not a blanket replacement for the sequential versions.
+For small slices, `gseq` deliberately stays sequential to avoid goroutine overhead.
 
-d.Each(func(k string, v int) { fmt.Printf("%s: %d\n", k, v) })
+## When to use gseq
 
-d.Keys()    // slice.Slice[string] (order not guaranteed)
-d.Values()  // slice.Slice[int]
+Use it when:
 
-d.Contains(func(k string, v int) bool { return v == 100 }) // false
-d.Every(func(k string, v int) bool { return v > 50 })      // true
-d.None(func(k string, v int) bool { return v < 0 })        // true
-d.Len()                                                     // 3
-d.ToMap()                                                   // map[string]int{...}
+- you want a small shared utility layer for Go codebases
+- you like explicit `Option` and `Result` types
+- you want one consistent style for slices, maps, and iterators
+- you prefer a focused library over a huge helper catalog
 
-// Merge — other's values win on duplicate keys
-merged := d.Merge(dict.Map[string, int]{"alice": 100, "dave": 70})
+Do not use it when:
 
-// MergeWith — custom resolution for duplicate keys (key, left, right)
-merged := d.MergeWith(
-    dict.Map[string, int]{"alice": 100, "dave": 70},
-    func(_ string, existing, incoming int) int { return max(existing, incoming) },
-)
-```
+- your team strongly prefers plain Go conventions everywhere
+- `slices`, `maps`, and a few local helpers already cover your needs
+- you want the widest available utility surface and ecosystem familiarity
 
-### Free functions
+## Relationship to other libraries
 
-```go
-// MapValues — transform values
-doubled := dict.MapValues(d, func(k string, v int) int { return v * 2 })
+`gseq` is not trying to replace all of:
 
-// Invert — swap keys and values
-inv := dict.Invert(dict.Map[string, int]{"a": 1, "b": 2})
-// dict.Map[int, string]{1: "a", 2: "b"}
+- `github.com/samber/lo`
+- `github.com/samber/mo`
+- the standard library `slices`, `maps`, and `iter`
 
-// ToSlice — convert map to slice
-pairs := dict.ToSlice(d, func(k string, v int) string {
-    return fmt.Sprintf("%s=%d", k, v)
-})
+It is a tighter alternative for projects that want fewer moving parts and a more uniform API.
 
-// FromSlice — build map from slice
-byName := dict.FromSlice(users, func(u User) (string, User) {
-    return u.Name, u
-})
-```
+One practical difference is dependency footprint: `gseq` keeps the core at zero third-party dependencies instead of building on a wider helper ecosystem.
 
----
+## Stability
 
-## `result` — Explicit error handling
+`gseq` is versioned and intended for production use.
 
-`Result[T, E]` represents either a success value `Ok(T)` or a typed error `Err(E)`.
+That said, the core promise is not "maximum feature count".
+The goal is a stable, compact foundation that stays readable as a dependency over time.
 
-```go
-r := result.Ok[int, string](42)
-r := result.Err[int, string]("something went wrong")
+## License
 
-// Wrap standard Go (value, error) pairs
-r := result.FromGoError(strconv.Atoi(input))  // Result[int, error]
-r := result.FromGoError(os.ReadFile("x.txt")) // Result[[]byte, error]
-```
-
-### Unwrapping
-
-```go
-r.IsOk()         // true / false
-r.IsErr()        // false / true
-r.Unwrap()       // value — panics on Err
-r.UnwrapErr()    // error — panics on Ok
-r.UnwrapOr(0)    // safe fallback
-r.UnwrapOrElse(func() int { return computeDefault() }) // lazy fallback
-r.ToOption()     // option.Option[T] — error is discarded
-```
-
-### Transformations
-
-```go
-// Map — transform value, propagate error unchanged
-doubled := result.Map(result.FromGoError(strconv.Atoi("21")),
-    func(n int) int { return n * 2 },
-) // Ok(42)
-
-// FlatMap — chain results
-validated := result.FlatMap(
-    result.FromGoError(strconv.Atoi(input)),
-    func(n int) result.Result[int, error] {
-        if n < 0 {
-            return result.Err[int, error](errors.New("must be positive"))
-        }
-        return result.Ok[int, error](n)
-    },
-)
-
-// MapErr — transform the error type
-r := result.MapErr(dbResult, func(e dbError) string { return e.Message })
-```
-
-### Partition — collect errors from a batch run
-
-`Partition` splits a `Slice[Result[T, E]]` into successes and errors, preserving order.
-Use a custom error struct to attach context — the same `process` function works for both
-sequential and parallel execution.
-
-```go
-type RecordError struct {
-    Index  int
-    Record Record
-    Cause  error
-}
-
-process := func(i int, r Record) result.Result[Output, RecordError] {
-    out, err := doWork(r)
-    if err != nil {
-        return result.Err[Output, RecordError](RecordError{Index: i, Record: r, Cause: err})
-    }
-    return result.Ok[Output, RecordError](out)
-}
-
-// Sequential
-results := slice.MapIndexed(records, process)
-
-// Parallel — swap one word, everything else stays the same
-results := slice.MapParallelIndexed(records, process)
-
-// Evaluate — identical for both
-successes, failures := result.Partition(results)
-
-fmt.Printf("✓ %d  ✗ %d\n", len(successes), len(failures))
-failures.Each(func(e RecordError) {
-    log.Printf("record[%d] %+v: %v", e.Index, e.Record, e.Cause)
-})
-```
-
-### Bridging `result` and `option`
-
-```go
-// Result → Option (error is discarded)
-opt := result.FromGoError(strconv.Atoi(s)).ToOption()
-
-// Option → Result (supply the error value for the None case)
-r := result.FromOption(findUser(id), errors.New("user not found")) // Result[User, error]
-```
-
----
-
-## Full example
-
-```go
-type User struct {
-    ID     int
-    Name   string
-    Score  int
-    Active bool
-}
-
-users := slice.Slice[User]{
-    {1, "Alice", 95, true},
-    {2, "Bob", 60, false},
-    {3, "Carol", 88, true},
-    {4, "Dave", 72, true},
-}
-
-// Top 2 active users by score, names only
-top := slice.Map(
-    users.
-        Filter(func(u User) bool { return u.Active }).
-        SortBy(func(a, b User) bool { return a.Score > b.Score }).
-        Limit(2),
-    func(u User) string { return u.Name },
-)
-// {"Alice", "Carol"}
-
-// Average score of active users
-active := users.Filter(func(u User) bool { return u.Active })
-avg := float64(slice.SumBy(active, func(u User) int { return u.Score })) /
-    float64(active.Len())
-// 85.0
-
-// Group into tiers
-tiers := slice.GroupBy(users, func(u User) string {
-    if u.Score >= 80 {
-        return "top"
-    }
-    return "rest"
-})
-// {"top": [Alice, Carol], "rest": [Bob, Dave]}
-
-// Parse and validate a list of raw IDs, silently drop invalid ones
-ids := slice.TryMap(rawInputs, func(s string) option.Option[int] {
-    return result.FromGoError(strconv.Atoi(s)).ToOption()
-})
-```
+MIT
